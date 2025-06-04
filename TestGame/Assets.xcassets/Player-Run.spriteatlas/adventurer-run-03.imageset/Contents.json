@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "adventurer-run-03.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
