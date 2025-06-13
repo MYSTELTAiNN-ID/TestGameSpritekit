@@ -23,9 +23,9 @@ class SKButtonNode: SKSpriteNode {
     
     var action: (() -> Void)?
 
-    init(texture: SKTexture?, size: CGSize, title: String, fontSize: CGFloat = 18, fontColor: SKColor = .white, verticalAlignment: SKLabelVerticalAlignmentMode = .center, horizontalAlignment: SKLabelHorizontalAlignmentMode = .center, soundName: String? = nil, action: (() -> Void)? = nil) {
+    init(texture: SKTexture?,color: SKColor = .clear , size: CGSize, title: String, fontSize: CGFloat = 18, fontColor: SKColor = .white, verticalAlignment: SKLabelVerticalAlignmentMode = .center, horizontalAlignment: SKLabelHorizontalAlignmentMode = .center, soundName: String? = nil, action: (() -> Void)? = nil) {
         self.action = action
-        super.init(texture: texture, color: .clear, size: size)
+        super.init(texture: texture, color: color, size: size)
         isUserInteractionEnabled = true
         
         // Label setup
@@ -35,6 +35,8 @@ class SKButtonNode: SKSpriteNode {
         labelNode.fontColor = fontColor
         labelNode.verticalAlignmentMode = verticalAlignment
         labelNode.horizontalAlignmentMode = horizontalAlignment
+        labelNode.numberOfLines = 0
+        labelNode.preferredMaxLayoutWidth = size.width * 0.85
         labelNode.zPosition = 1
         
         var labelPosition = CGPoint.zero
@@ -58,6 +60,15 @@ class SKButtonNode: SKSpriteNode {
         }
         labelNode.position = labelPosition
         addChild(labelNode)
+        
+        labelNode.removeFromParent()
+        addChild(labelNode)
+        
+        let labelHeight = labelNode.frame.height
+        let verticalPadding: CGFloat = 10
+        let adjustedHeight = labelHeight + verticalPadding
+        let adjustedSize = CGSize(width: size.width, height: adjustedHeight)
+        self.size = adjustedSize
         
         // Load sound if provided
         if let sound = soundName {
@@ -85,6 +96,13 @@ class SKButtonNode: SKSpriteNode {
 
     func setTitle(_ title: String) {
         labelNode.text = title
+        resizeButtonHeight()
+    }
+    
+    func resizeButtonHeight(){
+        let labelHeight = labelNode.frame.height
+        let padding: CGFloat = 20
+        self.size.height = labelHeight + padding
     }
 
     func setFontSize(_ size: CGFloat) {

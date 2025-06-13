@@ -20,7 +20,7 @@ enum VerticalAlignment {
     case bottom
 }
 
-extension SKScene {
+extension SKNode {
     
     func layoutNodesVertically(
         _ nodes: [SKNode],

@@ -10,7 +10,7 @@ import GameplayKit
 import GameController
 
 
-class GameScene: SKScene {
+class GameScene: SKScene, SKPhysicsContactDelegate {
     
     var entities = [GKEntity]()
     var graphs = [String : GKGraph]()
@@ -20,8 +20,10 @@ class GameScene: SKScene {
     private var ground: SKSpriteNode?
     private var player: SKSpriteNode!
     private var spawnPoint: CGPoint?
-    private var cameraPlayer: SKCameraNode?
     private var virtualController: GCVirtualController?
+    private var contactedNpcId: String?
+    private var dialogSystem = DialogSystem()
+    private var visNovNode = SKVisNovNode()
     var runFrames1: [SKTexture] = []
     var runFrames2: [SKTexture] = []
     var idleFrames: [SKTexture] = []
@@ -34,6 +36,8 @@ class GameScene: SKScene {
         
         self.lastUpdateTime = 0
         
+        physicsWorld.contactDelegate = self
+        
         setupSpawnPoint()
         setupGround()
         setupPlayer()
@@ -44,20 +48,38 @@ class GameScene: SKScene {
     
     
     override func didMove(to view: SKView) {
-        
+        visNovNode.position = CGPoint(
+            x: frame.midX,
+            y: frame.minY
+        )
+        visNovNode.scene?.size = self.size
+        self.camera?.addChild(visNovNode)
+        visNovNode.resizeBackgroundNode(to: self.view!)
+        visNovNode.isHidden = true
+        setupDialogSystem()
     }
     
-    
-    func touchDown(atPoint pos : CGPoint) {
+    func didBegin(_ contact: SKPhysicsContact) {
+        let names = [contact.bodyA.node?.name, contact.bodyB.node?.name]
+        if let npcName = names.first(where: { $0?.starts(with: "npc_") == true }) {
+            contactedNpcId = npcName
+            print("Player contacted: \(npcName!)")
+        }
     }
-    
-    func touchMoved(toPoint pos : CGPoint) {
-    }
-    
-    func touchUp(atPoint pos : CGPoint) {
+
+    func didEnd(_ contact: SKPhysicsContact) {
+        let names = [contact.bodyA.node?.name, contact.bodyB.node?.name]
+        if let npcName = names.compactMap({ $0 }).first(where: { $0 == contactedNpcId }) {
+            contactedNpcId = nil
+            print("Player left: \(npcName)")
+        }
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if visNovNode.isHidden == false {
+            dialogSystem.showNextDialogLine()
+            return
+        }
     }
     
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -84,12 +106,12 @@ class GameScene: SKScene {
         // Update entities
         self.lastUpdateTime = currentTime
         
-        let speed: CGFloat = 150
+        let speed: CGFloat = 200
 
         let dx = joystickDirection.dx * speed * dt
         player.position.x += dx
-        if let cameraPlayer = cameraPlayer, let player = player {
-            cameraPlayer.position = player.position
+        if let camera = self.camera, let player = player {
+            camera.position = player.position
         }
     }
     
@@ -120,11 +142,17 @@ class GameScene: SKScene {
         virtualController = GCVirtualController(configuration: virtualConfiguration)
         virtualController?.connect()
         if let gamepad = virtualController?.controller?.extendedGamepad {
-                gamepad.leftThumbstick.valueChangedHandler = { [weak self] _, x, y in
-                    self?.joystickDirection = CGVector(dx: CGFloat(x), dy: 0)
-                    self?.handleWalking()
+            gamepad.leftThumbstick.valueChangedHandler = { [weak self] _, x, y in
+                self?.joystickDirection = CGVector(dx: CGFloat(x), dy: 0)
+                self?.handleWalking()
+            }
+            
+            gamepad.buttonA.pressedChangedHandler = { [weak self] _,_, pressed in
+                if pressed {
+                    self?.tryStartNpcDialog()
                 }
             }
+        }
     }
     
     func handleWalking() {
@@ -167,10 +195,10 @@ class GameScene: SKScene {
         player = SKSpriteNode(texture: idleFrames[0])
         player.position = spawnPoint!
         player.zPosition = 1
-        player.size = CGSize(width: 90, height: 90)
+        player.size = CGSize(width: Int((player.texture?.size().width)!)*3, height: Int((player.texture?.size().height)!)*3)
 
         // Physics
-        player.physicsBody = SKPhysicsBody(rectangleOf: player.size)
+        player.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: Int((player.texture?.size().width)!*2.7), height: Int((player.texture?.size().height)! * 2.7)))
         player.physicsBody?.categoryBitMask = PhysicsCategory.player
         player.physicsBody?.contactTestBitMask = PhysicsCategory.ground
         player.physicsBody?.collisionBitMask = PhysicsCategory.ground
@@ -189,13 +217,13 @@ class GameScene: SKScene {
             print("⚠️ Camera node not found")
             return
         }
-        cameraPlayer = cameraNode
+        
         self.camera = cameraNode // Assign camera to scene
     }
     
     func setupNpc() {
-        if let npcNode = self.childNode(withName: "//npc1") as? SKSpriteNode {
-            npcNode.name = "npc1"
+        if let npcNode = self.childNode(withName: "//npc_smith") as? SKSpriteNode {
+            npcNode.name = "npc_smith"
             npcNode.size = CGSize(width: 90, height: 90)
             npcNode.zPosition = 0
             npcNode.physicsBody = SKPhysicsBody(rectangleOf: npcNode.size)
@@ -204,5 +232,35 @@ class GameScene: SKScene {
             npcNode.physicsBody?.collisionBitMask = PhysicsCategory.ground
             npcNode.physicsBody?.isDynamic = false
         }
+    }
+    
+    func setupDialogSystem() {
+        dialogSystem.setPlayerPortraits(playerPortrait) // Use your actual player portraits dictionary
+        dialogSystem.registerDialogTree(npcSmith)          // You should already have this in DialogData.swift
+
+        dialogSystem.onDialogLineDisplayed = { [weak self] line, portrait in
+            let texture = portrait != nil ? SKTexture(imageNamed: portrait!) : nil
+            self?.visNovNode.updateDialog(line: line, texture: texture)
+        }
+
+        dialogSystem.onChoicesPresented = { [weak self] choices in
+            self?.visNovNode.showChoices(choices: choices) { index in
+                self?.dialogSystem.selectChoice(choices[index])
+            }
+        }
+
+        dialogSystem.onDialogEnded = { [weak self] in
+            self?.visNovNode.clearDialog()
+            self?.virtualController?.connect()
+            self?.visNovNode.isHidden = true
+        }
+    }
+    
+    func tryStartNpcDialog() {
+        guard let npcId = contactedNpcId else { return }
+        print("Starting dialog with: \(npcId)")
+        dialogSystem.startDialog(npcId: npcId, state: "quest_01")
+        visNovNode.isHidden = false
+        virtualController?.disconnect()
     }
 }
